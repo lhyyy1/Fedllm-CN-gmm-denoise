@@ -159,7 +159,7 @@ local_tracking:
 #   python doc/tutorial/fedmkt/add_arc_noise.py --config doc/tutorial/fedmkt/configs/default.yaml
 noise:
   # Matches the robust-noise script defaults in 1_1.py as closely as possible.
-  noise_rate: 0.4
+  noise_rate: 0.2
   noise_type: sym          # sym or asym
   noise_parts: clients     # clients/private, all_train, all, or comma list such as client_0,client_1
   seed: 42
