@@ -1,0 +1,187 @@
+data:
+  # Change only this field to switch datasets.
+  # Supported values: arc_c, arc_e, rte, boolq, cqa
+  active_task: arc_c
+
+  # All dataset paths live here. `data_dir` is the directory created by
+  # prepare_fedmkt_data.py and later read by test.py.
+  tasks:
+    arc_c:
+      dataset_name: arc_challenge
+      data_dir: "/home/cmcc/lhy/data/arc_c"
+    arc_e:
+      dataset_name: arc_easy
+      data_dir: "/home/cmcc/lhy/data/arc_e"
+    rte:
+      dataset_name: rte
+      data_dir: "/home/cmcc/lhy/data/rte"
+    boolq:
+      dataset_name: boolq
+      data_dir: "/home/cmcc/lhy/data/boolq"
+    cqa:
+      dataset_name: cqa
+      data_dir: "/home/cmcc/lhy/data/cqa"
+
+  eval_split: validation
+  eval_max_examples:
+  public_select_num:
+  public_start_idx:
+
+data_prepare:
+  client_num: 4
+  source_split: train
+  seed: 42
+
+paths:
+  llm_pretrained: "/home/cmcc/lhy/models/Qwen2.5-14B-Instruct"  # ../../../models/llama-2-7b-hf ; /home/cmcc/went/models/Llama-2-13b-hf
+  #/home/cmcc/went/models/gemma-12b  "/home/cmcc/went/models/Qwen2.5-14B-Instruct"
+  slm_pretrained:
+    - "/home/cmcc/lhy/models/opt-1.3b"
+    - "/home/cmcc/lhy/models/gpt2-xl"
+    - "/home/cmcc/lhy/models/Sheared-LLaMA-1.3B"
+    - "/home/cmcc/lhy/models/bloom-1b1"
+  vocab_mapping_dir: "/home/cmcc/lhy/Fedllm-CN/doc/tutorial/fedmkt/mapping"
+  slm_to_llm_vocab_mappings:
+    - "opt_to_qwen2_5.json"              #"opt_to_gemma.json" 、"opt_to_llama.json"  "opt_to_qwen2_5.json"
+    - "gpt2_to_qwen2_5.json"             #"gpt2_to_gemma.json" 、"gpt2_to_llama.json" "gpt2_to_qwen2_5.json"
+    - "llama_small_to_qwen2_5.json"      #"llama_small_to_gemma.json"、 "llama_small_to_llama.json" "llama_small_to_qwen2_5.json"
+    - "bloom_to_qwen2_5.json"           #"bloom_to_gemma.json"、 "bloom_to_llama.json" "bloom_to_qwen2_5.json"
+  llm_to_slm_vocab_mappings:
+    - "qwen2_5_to_opt.json"            #"gemma_to_opt.json"、  "llama_to_opt.json" "qwen2_5_to_opt.json"
+    - "qwen2_5_to_gpt2.json"          #"gemma_to_gpt2.json" 、 "llama_to_gpt2.json" "qwen2_5_to_gpt2.json"
+    - "qwen2_5_to_llama_small.json"        #"gemma_to_llama_small.json" 、"llama_to_llama_small" "qwen2_5_to_llama_small.json"
+    - "qwen2_5_to_bloom.json"         #"gemma_to_bloom.json" 、"llama_to_bloom.json" "qwen2_5_to_bloom.json"
+  training_output_dir: "../../../../."
+  llm_model_save_dir: "./models/fedmkt_4_slms_llm_model"
+  slm_model_save_dirs:
+    - "./models/fedmkt_4_slms_slm_0"
+    - "./models/fedmkt_4_slms_slm_1"
+    - "./models/fedmkt_4_slms_slm_2"
+    - "./models/fedmkt_4_slms_slm_3"
+
+lora:
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  llm_target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+  slm_target_modules:
+    - ["q_proj", "v_proj"]
+    - ["c_attn"]
+    - ["q_proj", "k_proj", "v_proj", "o_proj"]
+    - ["query_key_value"]
+
+training:
+  global_epochs: 100
+  batch_size: 4
+  per_device_train_batch_size: 1
+  # Final FedMKT loss = kd_alpha * supervised_lm_loss + (1 - kd_alpha) * distill_loss.
+  kd_alpha: 0.9
+  distill_loss_type: ce
+  distill_strategy: greater
+  distill_temperature: 1.0
+  llm_lr: 3.0e-5
+  slm_lrs:
+    - 3.0e-5
+    - 3.0e-4
+    - 3.0e-5
+    - 3.0e-5
+  dataloader_num_workers: 4
+  warmup_ratio: 0.008
+  lr_scheduler_type: cosine
+  optim: adamw_torch
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  weight_decay: 0.1
+  max_grad_norm: 1.0
+  use_cpu: false
+  # For LLaMA-13B on A100, prefer bfloat16. float32 is much more likely to OOM.
+  llm_torch_dtype: bfloat16
+  slm_torch_dtype: float32
+  # Set to auto when one LLM process should shard the center model across
+  # multiple GPUs listed in runtime.arbiter_cuda_visible_devices.
+  llm_device_map: auto
+  llm_low_cpu_mem_usage: true
+
+runtime:
+  # The arbiter is the center LLM process. Use comma-separated ids to expose
+  # multiple GPUs to that one process, for example "2,3,4".
+  arbiter_cuda_visible_devices: "1,2,3"  # 中心服务器默认可见
+  guest_cuda_visible_devices: "4"
+  host_cuda_visible_devices:
+    "9999": "5"
+    "10000": "6"
+    "10001": "7"
+
+mmlcc:
+  use_aggregation: True
+  probability_epsilon: 1.0e-12
+  num_blocks: 2
+  privacy_guarantee: 1
+  beta_radius: 1.15
+  noise_sigma: 1.0
+  noise_clip_theta: 6.0
+  seed: 42
+
+wandb:
+  # disabled: no wandb init/logging, safest for unstable networks.
+  # offline: write local wandb files without network sync.
+  # online: upload to wandb servers.
+  mode: disabled  #disabled online offline
+  project: fedmkt
+  group: fedmkt
+  init_timeout: 30
+
+swanlab:
+  # disabled: no SwanLab logging.
+  # offline/local: write local SwanLab logs without cloud upload.
+  # cloud: upload to SwanLab cloud or your configured private host.
+  mode: cloud  #offline cloud disabled
+  project: fedmkt
+  group: fedmkt
+  workspace:
+  logdir: swanlog
+
+local_tracking:
+  # Keep a deployment-safe local copy of every metric sent to SwanLab/WandB.
+  # One JSONL/CSV pair is written per FATE process to avoid multi-process file contention.
+  enabled: true
+  log_dir: "./local_metrics"
+  write_jsonl: true
+  write_csv: true
+
+
+
+# Synthetic ARC label-noise generation.  Run:
+#   python doc/tutorial/fedmkt/add_arc_noise.py --config doc/tutorial/fedmkt/configs/default.yaml
+noise:
+  # Matches the robust-noise script defaults in 1_1.py as closely as possible.
+  noise_rate: 0.4
+  noise_type: sym          # sym or asym
+  noise_parts: clients     # clients/private, all_train, all, or comma list such as client_0,client_1
+  seed: 42
+  output_dir: "/home/cmcc/lhy/data/arc_c_noisy"
+
+# GMM denoising for python/fate_llm/algo/fedmkt_gmm.
+# test_gmm_denoise.py uses noise.output_dir by default when use_noisy_data=true.
+denoise:
+  use_noisy_data: true
+  noisy_data_dir: "/home/cmcc/lhy/data/arc_c_noisy"
+  gmm_enabled: true
+  gmm_warmup_steps: 20
+  gmm_update_interval: 5
+  gmm_history_size: 4096
+  gmm_min_samples: 64
+  gmm_clean_threshold: 0.8
+  gmm_noisy_weight: 0.2
+  gmm_weight_power: 1.0
+  # ce is the default GMM criterion; symmetric_ce enables the FedRG-style SCE variant.
+  loss_type: symmetric_ce            # ce or symmetric_ce
+  sce_alpha: 1.0
+  sce_beta: 0.1
+  rce_epsilon: 1.0e-4
+  loss_log_every_n_steps: 20
+  target_min_improve: 0.05
